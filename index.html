@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en-US">
+<head>
+	<title>Keeping your expected files in sync</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta name="copyright" content="Copyright &#169; 2010 2ndSite Inc." />
+
+	<link rel="stylesheet" href="Slidy2/styles/slidy.css" type="text/css" />
+	<link rel="stylesheet" href="Slidy2/styles/w3c-blue.css" type="text/css" />
+	<script src="Slidy2/scripts/slidy.js" charset="utf-8" type="text/javascript"></script>
+	<style type="text/css" media="screen">
+		div.slide h1 { color: black; }
+	</style>
+</head>
+<body>
+	<div class="slide cover title">
+		<h1>Keeping your expected files in sync</h1>
+		<h2>A presentation written in 10 minutes while you were heckling</h2>
+		<h2>Taavi Burns &lt;taavi@freshbooks.com&gt;</h2>
+	</div>
+	<div class="slide">
+		<h1>Testing with JSON expected files</h1>
+		<ul>
+		<li>Because we use JSON anyway</li>
+		<li>Lots of integration tests</li>
+		</ul>
+	</div>
+	<div class="slide">
+		<h1>Here's our lever in <tt>setup.cfg</tt></h1>
+<pre>
+	[overwrite_fixture_on_failure]
+	overwrite_fixture_on_failure = False
+</pre>
+	</div>
+	<div class="slide">
+		<h1>Prelude</h1>
+		<pre>
+from ConfigParser import SafeConfigParser as ConfigParser
+import difflib
+from freshbooks.lib.converters import asbool
+from os import path
+import simplejson
+import sys
+</pre>
+	</div>
+	<div class="slide">
+		<h1>Nasty hack</h1>
+<pre>
+config = ConfigParser()
+config_path = path.join(path.dirname(path.dirname(__file__)), 'setup.cfg')
+config.read(config_path)
+overwrite_fixture_on_failure = asbool(config.get(
+    'overwrite_fixture_on_failure',
+    'overwrite_fixture_on_failure'))
+</pre>
+	</div>
+	<div class="slide">
+		<h1>Then we'll provide a helper to load the file</h1>
+		<h2>(who cares how it's formatted)</h2>
+<pre>
+def assert_json_equals(expected_json_file_path, actual_json):
+    try:
+        with open(expected_json_file_path) as f:
+            expected_json_from_file = f.read()
+        expected_dict = simplejson.loads(expected_json_from_file)
+        expected_json = simplejson.dumps(expected_dict, sort_keys=True, indent=2)
+</pre>
+	</div>
+	<div class="slide">
+		<h1>But if it didn't exist yet, fake it</h1>
+<pre>
+    except IOError:
+        if overwrite_fixture_on_failure:
+            open(expected_json_file_path, "w").close()
+            # We'll end up ignoring this later because we're in overwrite_fixture_on_failure
+            # But if we don't set it stringily, difflib cacks
+            expected_json = "&lt;empty file&gt;"
+        else:
+            raise
+</pre>
+	</div>
+	<div class="slide">
+		<h1>Same goes for an unparseable file</h1>
+<pre>
+    except simplejson.JSONDecodeError:
+        if overwrite_fixture_on_failure:
+            # We'll end up ignoring this later because we're in overwrite_fixture_on_failure
+            # But if we don't set it stringily, difflib cacks
+            expected_json = expected_json_from_file
+        else:
+            raise
+</pre>
+	</div>
+	<div class="slide">
+		<h1>Get the actual thing</h1>
+		<h2>(really not caring how it's formatted)</h2>
+<pre>
+    actual_dict = simplejson.loads(actual_json)
+    actual_json = simplejson.dumps(actual_dict, sort_keys=True, indent=2)
+</pre>
+	</div>
+	<div class="slide">
+		<h1>The real magic!</h1>
+		<h2>&lt;3 difflib</h2>
+<pre>
+    try:
+        assert expected_json == actual_json
+    except:
+        for line in difflib.unified_diff(
+                expected_json.splitlines(True),
+                actual_json.splitlines(True),
+                "expected", "actual"):
+            sys.stdout.write(line)
+        if overwrite_fixture_on_failure:
+            out_file = open(expected_json_file_path, "w")
+            out_file.write(actual_json)
+            out_file.close()
+        else:
+            raise
+</pre>
+	</div>
+	<div class="slide">
+		<h1>I dunno, it seemed like a neat idea.</h1>
+	</div>
+</body>
+</html>
